@@ -54,18 +54,8 @@ public class CodeSnippet
                 bool AllowEventSpotToGroup = false; // If group spot is not available then before 30 min to start event to end event we allow .
                 if (getPartnerShiftGroupSet.GroupOpenUserSlots <= 0)
                 {
-                    if (projectData.UTCStartedAt < DateTimeOffset.UtcNow.AddMinutes(30) && DateTimeUtils.AddMinutes(projectData.UTCFinishedAt) > DateTimeOffset.UtcNow)
-                    {
-                        if (projectData.OpenUserSlots <= 0)
-                        {
-                            return Request.CreateResponse((HttpStatusCode)460);
-                        }
-                        AllowEventSpotToGroup = true;
-                    }
-                    else
-                    {
-                        return Request.CreateResponse((HttpStatusCode)460);
-                    }
+                                          return Request.CreateResponse((HttpStatusCode)460);
+                    
                 }
 
                 // Ensure the request is a multipart request
@@ -144,11 +134,7 @@ public class CodeSnippet
                         {
                             return Request.CreateErrorResponse(HttpStatusCode.BadRequest, "Invalid header sequence.");
                         }
-                        var StrDateTime = projectData.StartedAt.ToString("dddd, MMM dd");
-                        var StartTime = projectData.StartedAt.ToString("hh:mm tt").Replace('.', ':');
-                        var manager = await context.ManagerSet.FirstOrDefaultAsync(r => r.Id == projectData.ManagerId);
-                        var orgName = await context.AssociationSet.FirstOrDefaultAsync(r => !r.Deleted && r.Id == manager.AssociationId);
-                       
+                                              
 
                         List<Personalizations> listPersonalizations = new List<Personalizations>();
                         for (int row = 2; row <= rowCount; row++) // Assuming headers are in the first row
@@ -163,16 +149,12 @@ public class CodeSnippet
                             {
                                 isMinor = true;
                             }
-                            var InvitationData = new PartnerGroupInvitees();
-                            var RegisteredData = new ProjectSupportUser();
+                          
                             if (!string.IsNullOrEmpty(firstName) && !string.IsNullOrEmpty(lastName)) // First name and Last name required for save
                             {
                                 bool isSendEmail = false;
                                 if (!string.IsNullOrEmpty(email) && IsValidEmail(email))  // check if the data coming has email also it is valid, then check for duplication
                                 {
-                                    InvitationData = await context.PartnerGroupInviteesSet.Where(x => x.GroupId == groupId && !x.Deleted && x.Name.Trim().ToLower() == firstName.Trim().ToLower() && x.LastName.Trim().ToLower() == lastName.Trim().ToLower() && x.Email == email).FirstOrDefaultAsync();
-                                    // to check if already registered with the same data ksw-2718
-                                    RegisteredData = await context.ProjectSupportUserSet.Include(x => x.User).Where(x => x.PartnerShiftGroupId == groupId && !x.Deleted && x.User.FirstName.Trim().ToLower() == firstName.Trim().ToLower() && x.User.LastName.Trim().ToLower() == lastName.Trim().ToLower() && (x.User.AuthId == email || x.User.AuthProviderEmail == email)).FirstOrDefaultAsync();
                                     isSendEmail = true;
                                 }
                                 else
@@ -204,13 +186,7 @@ public class CodeSnippet
                                             EmailToken token = new EmailToken
                                             {
                                                 Username = !string.IsNullOrWhiteSpace(inviteGroup.Name) ? "Hi " + inviteGroup.Name + "," : "Hello,",
-                                                Date = StrDateTime,
-                                                Time = StartTime,
-                                                ProjectName = projectData.Name,
-                                                WebSiteUrl = WebSiteUrl,
-                                                OrganizationName = orgName != null ? orgName.Name : string.Empty,
-                                                ProjectAddress = projectData.Address,
-                                                GroupLeaderName = getPartnerShiftGroupSet.User.FirstName,
+                                                
                                                 GroupName = getPartnerShiftGroupSet.PartnerGroupName,
                                                 Task = projectData.Work
                                             };
@@ -220,8 +196,7 @@ public class CodeSnippet
                                             personalizations.dynamicTemplateData = token;
                                             listPersonalizations.Add(personalizations);
                                         }
-                                        var eventmanager = await context.ManagerSet.Include(m => m.Association).Where(m => m.Id == projectData.ManagerId).FirstOrDefaultAsync();
-                                        if (eventmanager.Association.IsPartner && eventmanager.Association.Id == ConfigSettings.FMSCAssociation)
+                                        if (eventmanager.Association.IsPartner && eventmanager.Association.Id == ConfigSettings.AssociationId)
                                         {
                                             PartnerGroupInviteesWebhookDetails partnergroupinviteeswebhookdetails = new PartnerGroupInviteesWebhookDetails();
                                             partnergroupinviteeswebhookdetails.firstName = firstName;
@@ -229,7 +204,7 @@ public class CodeSnippet
                                             partnergroupinviteeswebhookdetails.email = email;
                                             partnergroupinviteeswebhookdetails.isMinor = isMinor;    // Minor flag not updating
                                             partnergroupinviteeswebhookdetails.kindlyPartnerGroupId = groupId;
-                                            partnergroupinviteeswebhookdetails.kindlyInvitationId = inviteGroup.Id;
+                                           
                                             partnergroupinviteeswebhookdetails.kindlyShiftId = projectData.Id;
                                             partnergroupinviteeswebhookdetails.method = EWebhookCalls.AddInviteeInGroup;
                                             await InviteeWebhookCall(partnergroupinviteeswebhookdetails);
@@ -244,21 +219,7 @@ public class CodeSnippet
 
                         if (i > 0) // check for if any invitee data stored or not then only we calculate the spots
                         {
-                            getPartnerShiftGroupSet.KindlyInviteeUserCount = getPartnerShiftGroupSet.KindlyInviteeUserCount + i;
-                            if (AllowEventSpotToGroup)
-                            {
-                                var prj = context.ProjectSet.Where(p => p.Id == projectData.Id).FirstOrDefault();
-                                prj.RegisteredUserCount = prj.RegisteredUserCount + i;
-                                prj.OpenUserSlots = prj.OpenUserSlots - i;
-                                context.Entry(prj).State = EntityState.Modified;
-                                await context.SaveChangesAsync();
-                            }
-                            else
-                            {
-                                getPartnerShiftGroupSet.GroupOpenUserSlots = getPartnerShiftGroupSet.GroupOpenUserSlots - i;
-                                context.Entry(getPartnerShiftGroupSet).State = EntityState.Modified;
-                                await context.SaveChangesAsync();
-                            }
+                         
                             // KSW-2815
                             var emailTemplateController = new EmailTemplateController
                             {
@@ -267,12 +228,10 @@ public class CodeSnippet
                             };
                             await emailTemplateController.AzureBusBulkEmailSend(listPersonalizations, (int)EEMailTemplateCode.GroupInvitation);
                         }
-
-                        else
-                        {
+                        else                       
                             return Request.CreateResponse(HttpStatusCode.OK, "No data for uploading.");
-                        }
-                        return Request.CreateResponse(HttpStatusCode.OK, "File uploaded and processed successfully.");
+
+                                             return Request.CreateResponse(HttpStatusCode.OK, "File uploaded and processed successfully.");
                     }
                     return Request.CreateErrorResponse(HttpStatusCode.BadRequest, "Data is more than the total open slots");
                 }
